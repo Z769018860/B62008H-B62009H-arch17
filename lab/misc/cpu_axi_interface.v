@@ -209,8 +209,8 @@ module cpu_axi_interface
     assign arcache = 4'd0;
     assign arprot  = 3'd0;
     assign arsize  = ({3{read_packet[65:64] == 2'b00}} & 3'd1) |
-					 ({3{read_packet[65:64] == 2'b01}} & 3'd2) |
-					 ({3{read_packet[65:64] == 2'b10}} & 3'd4);
+                     ({3{read_packet[65:64] == 2'b01}} & 3'd2) |
+                     ({3{read_packet[65:64] == 2'b10}} & 3'd4);
     assign arvalid = state == INST_R_BEGIN || state == DATA_R_BEGIN;
     // r
     assign rready  = 1'b1;
@@ -229,8 +229,8 @@ module cpu_axi_interface
     assign awprot  = 3'd0;
     assign awvalid = (state == DATA_W_BEGIN) ? 1'b1 : 1'b0;
     assign awsize  = ({3{data_packet_o[65:64] == 2'b00}} & 3'd1) |
-				     ({3{data_packet_o[65:64] == 2'b01}} & 3'd2) |
-					 ({3{data_packet_o[65:64] == 2'b10}} & 3'd4);
+                     ({3{data_packet_o[65:64] == 2'b01}} & 3'd2) |
+                     ({3{data_packet_o[65:64] == 2'b10}} & 3'd4);
     // w
     assign wid    = 4'd0;
     assign wdata  = data_packet_o[31:0];
