@@ -1,7 +1,4 @@
-`define INST_FIRST
-// `define ALTERNATING
-// `define CUSTOM_SEQUENCE
-// `define SEQ              4'b1001
+`define INST_FIRST      // handle pending inst packets first
 module cpu_axi_interface
 (
     input              clk,
@@ -90,8 +87,8 @@ module cpu_axi_interface
         .wr_en(inst_req && !inst_FIFO_full),
         .empty(inst_FIFO_empty),
         .dout(inst_packet_o),
-        .rd_en(inst_rd)
-        ,.data_count(inst_FIFO_cnt)
+        .rd_en(inst_rd),
+        .data_count(inst_FIFO_cnt)
     );
 
     FIFO_queue data_FIFO
@@ -103,14 +100,14 @@ module cpu_axi_interface
         .wr_en(data_req && !data_FIFO_full),
         .empty(data_FIFO_empty),
         .dout(data_packet_o),
-        .rd_en(data_rd)
-        ,.data_count(data_FIFO_cnt)
+        .rd_en(data_rd),
+        .data_count(data_FIFO_cnt)
     );
 
+    // SRAM-like
     assign inst_addr_ok = !inst_FIFO_full;
     assign data_addr_ok = !data_FIFO_full;
 
-    // SRAM-like
     assign inst_rdata = rdata;
     assign data_rdata = rdata;
 
@@ -129,37 +126,27 @@ module cpu_axi_interface
 
     reg [3:0] state, nextstate;
     always @(posedge clk)
-        if (~resetn)
-            state <= IDLE;
-        else
-            state <= nextstate;
-    
-    wire [3:0] sram_wen;
-    decode_sram_wen dec(
-        .size(     awsize),
-        .addr(awaddr[1:0]),
-        .wen (   sram_wen)
-    );
+        state <= (~resetn) ? IDLE : nextstate;
 
+    // priority arbiter
     wire inst_pending, data_pending;
     `ifdef INST_FIRST
-    // handle pending inst packets first
     assign inst_pending = !inst_FIFO_empty;
     assign data_pending = inst_FIFO_empty && !data_FIFO_empty;
     `endif
 
-    assign inst_rd = (state == IDLE) ? inst_pending : 1'b0;
-    assign data_rd = (state == IDLE) ? data_pending : 1'b0;
+    assign inst_rd = (state == IDLE) && inst_pending;
+    assign data_rd = (state == IDLE) && data_pending;
 
-    assign data_data_ok = state == ISSUE_DATA_DATA_OK;
-    assign inst_data_ok = state == ISSUE_INST_DATA_OK;
-    
     reg arbit_inst, arbit_data;
     always @(posedge clk)
         if (state == IDLE) begin
             arbit_inst <= inst_rd;
             arbit_data <= data_rd;
         end
+
+    assign data_data_ok = state == ISSUE_DATA_DATA_OK;
+    assign inst_data_ok = state == ISSUE_INST_DATA_OK;
 
     always @(*) begin
         if (!resetn)
@@ -227,38 +214,27 @@ module cpu_axi_interface
     assign awlock  = 2'd0;
     assign awcache = 4'd0;
     assign awprot  = 3'd0;
-    assign awvalid = (state == DATA_W_BEGIN) ? 1'b1 : 1'b0;
+    assign awvalid = state == DATA_W_BEGIN;
     assign awsize  = ({3{data_packet_o[65:64] == 2'b00}} & 3'd1) |
                      ({3{data_packet_o[65:64] == 2'b01}} & 3'd2) |
                      ({3{data_packet_o[65:64] == 2'b10}} & 3'd4);
     // w
     assign wid    = 4'd0;
     assign wdata  = data_packet_o[31:0];
-    assign wstrb  = sram_wen;
+    assign wstrb  = ({32{awaddr[1:0] == 2'b00 && awsize == 3'd1}} & 4'b0001) |
+                    ({32{awaddr[1:0] == 2'b01 && awsize == 3'd1}} & 4'b0010) |
+                    ({32{awaddr[1:0] == 2'b10 && awsize == 3'd1}} & 4'b0100) |
+                    ({32{awaddr[1:0] == 2'b11 && awsize == 3'd1}} & 4'b1000) |
+                    ({32{awaddr[1:0] == 2'b00 && awsize == 3'd2}} & 4'b0011) |
+                    ({32{awaddr[1:0] == 2'b10 && awsize == 3'd2}} & 4'b1100) |
+                    ({32{awaddr[1:0] == 2'b00 && awsize == 3'd4}} & 4'b1111) |
+                    // 3-byte write transactions
+                    ({32{awaddr[1:0] == 2'b01 && awsize == 3'd4}} & 4'b1110) |
+                    ({32{awaddr[1:0] == 2'b10 && awsize == 3'd4}} & 4'b0111);
     assign wlast  = 1'b1;
     assign wvalid = state == DATA_W_ADDR_READY;
     // b
     assign bready = 1'b1;
     /* same as rready */
-
-endmodule
-
-module decode_sram_wen(
-    input  [2:0] size,
-    input  [1:0] addr,
-
-    output [3:0] wen
-);
-
-    assign wen = ({32{addr == 2'b00 && size == 3'd1}} & 4'b0001) |
-                 ({32{addr == 2'b01 && size == 3'd1}} & 4'b0010) |
-                 ({32{addr == 2'b10 && size == 3'd1}} & 4'b0100) |
-                 ({32{addr == 2'b11 && size == 3'd1}} & 4'b1000) |
-                 ({32{addr == 2'b00 && size == 3'd2}} & 4'b0011) |
-                 ({32{addr == 2'b10 && size == 3'd2}} & 4'b1100) |
-                 ({32{addr == 2'b00 && size == 3'd4}} & 4'b1111) |
-                 // 3-byte write transactions
-                 ({32{addr == 2'b01 && size == 3'd4}} & 4'b1110) |
-                 ({32{addr == 2'b10 && size == 3'd4}} & 4'b0111);
 
 endmodule
